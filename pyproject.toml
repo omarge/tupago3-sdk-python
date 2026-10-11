@@ -1,0 +1,88 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "tupago3-sdk-python"
+version = "0.1.0"
+description = "Secure, idiomatic Python client SDK for the TUPAGO3 PaymentService gRPC API."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Proprietary" }
+authors = [{ name = "TuPago3 Engineering" }]
+keywords = ["tupago3", "payments", "grpc", "sdk", "banxico", "codi"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+dependencies = [
+    "grpcio>=1.60",
+    "protobuf>=5.26",
+]
+
+[project.optional-dependencies]
+dev = [
+    "grpcio-tools>=1.60",
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "pytest-cov>=4.0",
+    "ruff>=0.4",
+    "mypy>=1.8",
+    "build>=1.0",
+    "twine>=4.0",
+    "cryptography>=42.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/omarge/tupago3-sdk-python"
+Repository = "https://github.com/omarge/tupago3-sdk-python"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/tupago3_sdk"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "src/tupago3_sdk",
+    "tests",
+    "examples",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md",
+    "pyproject.toml",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+addopts = "-ra"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = ["src/tupago3_sdk/generated"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "W"]
+ignore = ["B008", "B904"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["B017"]
+"examples/**" = ["E501"]
+
+[tool.mypy]
+python_version = "3.12"
+warn_unused_ignores = false
+warn_redundant_casts = true
+ignore_missing_imports = true
+exclude = ["src/tupago3_sdk/generated"]
+
+# Generated Protobuf modules expose message classes dynamically, so mypy cannot resolve
+# their attributes. Client modules reference those message classes for typing only.
+[[tool.mypy.overrides]]
+module = ["tupago3_sdk.client", "tupago3_sdk.async_client", "tupago3_sdk.generated.*"]
+disable_error_code = ["attr-defined", "name-defined", "unused-ignore", "no-any-return"]
