@@ -36,6 +36,11 @@ BACKEND_HOST = "127.0.0.1"
 BACKEND_PORT = 9090
 BACKEND_DEV_YML = "/home/geo/tupago2/backend3/src/main/resources/config/application-dev.yml"
 
+# Synthetic owner principals present in the lab dataset. `prodgcp` (jhi_user id 1054) owns
+# cliente id=1 (clave_institucion 40030); `testgcp` (id 1053) owns cliente id=2 (40997).
+OWNER_PROD = "prodgcp"
+OWNER_DEV = "testgcp"
+
 
 def _port_open(host: str, port: int, timeout: float = 0.5) -> bool:
     try:
@@ -76,6 +81,49 @@ def test_backend3_read_valid_jwt(backend_available):
             client.get_cliente(GetClienteRequest(id=1))
         except TupagoNotFoundError:
             pass
+
+
+def test_backend3_positive_get_cliente(backend_available):
+    secret = backend_available
+    config = ClientConfig(endpoint=f"{BACKEND_HOST}:{BACKEND_PORT}")
+    client = TupagoPaymentClient(
+        config, token_provider=LabJwtProvider(base64_secret=secret, sub=OWNER_PROD)
+    )
+    with client:
+        perfil = client.get_cliente(GetClienteRequest(id=1))
+    # Concrete fields from the synthetic dataset (cliente id=1 owned by principal 'prodgcp').
+    # NOT_FOUND is NOT accepted here — this must be a real positive response.
+    cliente = perfil.cliente
+    assert cliente.id == 1
+    assert cliente.nombre == "GESTION CORPORATIVA DE PROYECTOS SA DE C"
+    assert cliente.clave_institucion == "40030"
+    assert perfil.catalogo_institucion.clave_institucion == "40030"
+    assert perfil.catalogo_institucion.nombre_corto == "BAJIO"
+
+
+def test_backend3_positive_get_catalogo(backend_available):
+    secret = backend_available
+    config = ClientConfig(endpoint=f"{BACKEND_HOST}:{BACKEND_PORT}")
+    client = TupagoPaymentClient(config, token_provider=LabJwtProvider(base64_secret=secret))
+    with client:
+        catalogo = client.get_catalogo(GetCatalogoRequest(clave_institucion="301"))
+    # Concrete fields from the synthetic catalogo reference data.
+    assert catalogo.id == 72797
+    assert catalogo.clave_institucion == "301"
+    assert catalogo.nombre_corto == "MEMBER_A"
+
+
+def test_backend3_ownership_foreign_cliente(backend_available):
+    secret = backend_available
+    config = ClientConfig(endpoint=f"{BACKEND_HOST}:{BACKEND_PORT}")
+    client = TupagoPaymentClient(
+        config, token_provider=LabJwtProvider(base64_secret=secret, sub=OWNER_PROD)
+    )
+    with client:
+        # 'prodgcp' owns cliente id=1 but NOT id=2 (owned by 'testgcp'). A valid, authenticated
+        # owner of one cliente must not be able to read the other: fail-closed ownership.
+        with pytest.raises(TupagoNotFoundError):
+            client.get_cliente(GetClienteRequest(id=2))
 
 
 def test_backend3_read_invalid_jwt(backend_available):
