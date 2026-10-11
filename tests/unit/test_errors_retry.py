@@ -25,14 +25,31 @@ from tupago3_sdk import (
     from_grpc_error,
     is_retryable,
     retry,
+    server_retry_delay,
+    should_retry_read,
 )
 
 
-def _rpc_error(code: grpc.StatusCode, details: str = "x") -> grpc.RpcError:
+def _rpc_error(code: grpc.StatusCode, details: str = "x", trailing=None) -> grpc.RpcError:
     e = grpc.RpcError("status")
     e.code = lambda: code  # type: ignore[attr-defined]
     e.details = lambda: details  # type: ignore[attr-defined]
+    if trailing is not None:
+        e.trailing_metadata = lambda: trailing  # type: ignore[attr-defined]
     return e
+
+
+def _retryinfo_trailing(seconds: int, nanos: int = 0) -> list[tuple[str, bytes]]:
+    from google.rpc import error_details_pb2, status_pb2
+
+    st = status_pb2.Status()
+    st.code = 8  # RESOURCE_EXHAUSTED
+    st.message = "rate limited"
+    info = error_details_pb2.RetryInfo()
+    info.retry_delay.seconds = seconds
+    info.retry_delay.nanos = nanos
+    st.details.add().Pack(info)
+    return [("grpc-status-details-bin", st.SerializeToString())]
 
 
 @pytest.mark.parametrize(
@@ -78,9 +95,28 @@ def test_T12_unknown_outcome_on_create():
 
 
 def test_T12_is_retryable_rules():
+    # Read transients.
     assert is_retryable(grpc.StatusCode.UNAVAILABLE, operation="GetCliente") is True
+    assert is_retryable(grpc.StatusCode.DEADLINE_EXCEEDED, operation="GetCliente") is True
+    # Creates are never retried, even for transient codes.
     assert is_retryable(grpc.StatusCode.UNAVAILABLE, operation="CreateQr") is False
+    # Non-transient (typed) codes are never retried.
     assert is_retryable(grpc.StatusCode.NOT_FOUND, operation="GetCliente") is False
+    # G3 hardening: CANCELLED and INTERNAL must NOT be treated as generic transients.
+    assert is_retryable(grpc.StatusCode.CANCELLED, operation="GetCliente") is False
+    assert is_retryable(grpc.StatusCode.INTERNAL, operation="GetCliente") is False
+    # G3 hardening: RESOURCE_EXHAUSTED is only retryable when the server advertises RetryInfo.
+    assert is_retryable(grpc.StatusCode.RESOURCE_EXHAUSTED, operation="GetCliente") is False
+    assert (
+        is_retryable(
+            grpc.StatusCode.RESOURCE_EXHAUSTED,
+            operation="GetCliente",
+            exc=_rpc_error(
+                code=grpc.StatusCode.RESOURCE_EXHAUSTED, trailing=_retryinfo_trailing(2)
+            ),
+        )
+        is True
+    )
 
 
 def test_T13_read_retry_bounded(plaintext_server, lab_secret):
@@ -131,3 +167,83 @@ def test_T14_read_non_retryable_error(plaintext_server, lab_secret):
             client.get_cliente(__import__("tupago3_sdk").models.GetClienteRequest(id=1))
     # NOT_FOUND is non-retryable: exactly one attempt.
     assert servicer.get_cliente_count == 1
+
+
+# --- G3 retry hardening (CANCELLED / INTERNAL / RESOURCE_EXHAUSTED) -------------------
+
+
+def _counted_failing(call_code, trailing=None):
+    calls = {"n": 0}
+
+    def call():
+        calls["n"] += 1
+        raise _rpc_error(call_code, "boom", trailing=trailing)
+
+    return calls, lambda: call()
+
+
+def test_T_G3_cancelled_not_retried():
+    calls, call = _counted_failing(grpc.StatusCode.CANCELLED)
+    with pytest.raises(Exception):
+        retry.retry_read_sync(
+            RetryPolicy(max_attempts=3, base_delay_seconds=0.001), "GetCliente", call
+        )
+    assert calls["n"] == 1
+
+
+def test_T_G3_internal_not_retried():
+    calls, call = _counted_failing(grpc.StatusCode.INTERNAL)
+    with pytest.raises(Exception):
+        retry.retry_read_sync(
+            RetryPolicy(max_attempts=3, base_delay_seconds=0.001), "GetCliente", call
+        )
+    assert calls["n"] == 1
+
+
+def test_T_G3_resource_exhausted_no_retryinfo_no_storm():
+    # Without a server RetryInfo, RESOURCE_EXHAUSTED must NOT be retried (no retry storm).
+    calls, call = _counted_failing(grpc.StatusCode.RESOURCE_EXHAUSTED)
+    with pytest.raises(Exception):
+        retry.retry_read_sync(
+            RetryPolicy(max_attempts=3, base_delay_seconds=0.001), "GetCliente", call
+        )
+    assert calls["n"] == 1
+
+
+def test_T_G3_resource_exhausted_with_retryinfo_retries():
+    # With a server RetryInfo delay, RESOURCE_EXHAUSTED IS retried (bounded by max_attempts).
+    calls, call = _counted_failing(
+        grpc.StatusCode.RESOURCE_EXHAUSTED, trailing=_retryinfo_trailing(0, nanos=1_000_000)
+    )
+    with pytest.raises(Exception):
+        retry.retry_read_sync(
+            RetryPolicy(max_attempts=3, base_delay_seconds=0.001), "GetCliente", call
+        )
+    assert calls["n"] == 3
+
+
+def test_T_G3_server_retry_delay_capped():
+    delay = server_retry_delay(
+        _rpc_error(grpc.StatusCode.RESOURCE_EXHAUSTED, trailing=_retryinfo_trailing(999))
+    )
+    assert delay is not None
+    assert delay == 10.0  # capped at MAX_SERVER_RETRY_DELAY
+
+
+def test_T_G3_should_retry_read_consistency():
+    assert (
+        should_retry_read(_rpc_error(grpc.StatusCode.UNAVAILABLE), operation="GetCliente") is True
+    )
+    assert should_retry_read(_rpc_error(grpc.StatusCode.CANCELLED), operation="GetCliente") is False
+    assert should_retry_read(_rpc_error(grpc.StatusCode.INTERNAL), operation="GetCliente") is False
+    assert (
+        should_retry_read(_rpc_error(grpc.StatusCode.RESOURCE_EXHAUSTED), operation="GetCliente")
+        is False
+    )
+    assert (
+        should_retry_read(
+            _rpc_error(grpc.StatusCode.RESOURCE_EXHAUSTED, trailing=_retryinfo_trailing(1)),
+            operation="GetCliente",
+        )
+        is True
+    )

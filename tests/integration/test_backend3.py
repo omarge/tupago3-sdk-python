@@ -20,6 +20,7 @@ import pytest
 from tupago3_sdk import (
     AsyncTupagoPaymentClient,
     ClientConfig,
+    GetCatalogoRequest,
     GetClienteRequest,
     GetStatusRequest,
     LabAsyncJwtProvider,
@@ -27,6 +28,7 @@ from tupago3_sdk import (
     StaticTokenProvider,
     TupagoNotFoundError,
     TupagoPaymentClient,
+    TupagoPermissionDeniedError,
     TupagoUnauthenticatedError,
 )
 
@@ -87,6 +89,50 @@ def test_backend3_read_invalid_jwt(backend_available):
 def test_backend3_read_missing_jwt(backend_available):
     config = ClientConfig(endpoint=f"{BACKEND_HOST}:{BACKEND_PORT}")
     client = TupagoPaymentClient(config, token_provider=None)
+    with client:
+        with pytest.raises(TupagoUnauthenticatedError):
+            client.get_cliente(GetClienteRequest(id=1))
+
+
+def test_backend3_catalogo_valid_jwt(backend_available):
+    secret = backend_available
+    config = ClientConfig(endpoint=f"{BACKEND_HOST}:{BACKEND_PORT}")
+    client = TupagoPaymentClient(config, token_provider=LabJwtProvider(base64_secret=secret))
+    with client:
+        # Institution 301 is the synthetic institution used by the Java integration test.
+        try:
+            client.get_catalogo(GetCatalogoRequest(clave_institucion="301"))
+        except TupagoNotFoundError:
+            pass
+
+
+def test_backend3_qr_status_not_found(backend_available):
+    secret = backend_available
+    config = ClientConfig(endpoint=f"{BACKEND_HOST}:{BACKEND_PORT}")
+    client = TupagoPaymentClient(config, token_provider=LabJwtProvider(base64_secret=secret))
+    with client:
+        with pytest.raises(TupagoNotFoundError):
+            client.get_qr_status(GetStatusRequest(idc="does-not-exist-xyz", id_cuenta=1))
+
+
+def test_backend3_ownership_rejection(backend_available):
+    secret = backend_available
+    config = ClientConfig(endpoint=f"{BACKEND_HOST}:{BACKEND_PORT}")
+    client = TupagoPaymentClient(config, token_provider=LabJwtProvider(base64_secret=secret))
+    with client:
+        # id=1 is owned by principal 'prodgcp' in the synthetic dataset; the SDK's lab principal
+        # must NOT be able to read it. Auth succeeds (no UNAUTHENTICATED) but authorization
+        # rejects it as NOT_FOUND / PERMISSION_DENIED — proving the backend enforces ownership.
+        with pytest.raises((TupagoNotFoundError, TupagoPermissionDeniedError)):
+            client.get_cliente(GetClienteRequest(id=1))
+
+
+def test_backend3_expired_jwt(backend_available):
+    secret = backend_available
+    config = ClientConfig(endpoint=f"{BACKEND_HOST}:{BACKEND_PORT}")
+    client = TupagoPaymentClient(
+        config, token_provider=LabJwtProvider(base64_secret=secret, validity_seconds=-10)
+    )
     with client:
         with pytest.raises(TupagoUnauthenticatedError):
             client.get_cliente(GetClienteRequest(id=1))

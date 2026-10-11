@@ -64,15 +64,14 @@ class AsyncTupagoPaymentClient:
         else:
             creds = security.build_channel_credentials(self._config)
             assert creds is not None
-            server_name = self._config.tls.server_name or (
-                None if self._config.is_loopback() else self._config.host()
-            )
-            self._channel = grpc.aio.secure_channel(
-                target,
-                creds,
-                options=_aio_channel_options(self._config),
-                server_host_override=server_name,
-            )
+            # ``server_name`` is the *explicit* expected server identity. We only override when
+            # the caller configures it; otherwise gRPC verifies against the target host (correct,
+            # non-bypass behaviour for remote endpoints).
+            server_name = self._config.tls.server_name
+            secure_kwargs: dict[str, object] = {"options": _aio_channel_options(self._config)}
+            if server_name:
+                secure_kwargs["server_host_override"] = server_name
+            self._channel = grpc.aio.secure_channel(target, creds, **secure_kwargs)
             self._own_channel = True
         self._stub = grpc_pb.PaymentServiceStub(self._channel)
         self._closed = False
@@ -113,6 +112,8 @@ class AsyncTupagoPaymentClient:
         return self._config.deadline_seconds or None
 
     async def _call_read(self, operation: str, method, request):
+        if self._closed:
+            raise errors.TupagoTransportError("Client is closed; cannot issue read RPCs")
         metadata = await self._metadata()
         timeout = self._timeout()
         last_exc: Exception | None = None
@@ -121,22 +122,21 @@ class AsyncTupagoPaymentClient:
                 return await method(request, metadata=metadata, timeout=timeout)
             except grpc.RpcError as exc:  # type: ignore[attr-defined]
                 last_exc = exc
-                code = getattr(exc, "code", None)
-                if callable(code) and not isinstance(code, grpc.StatusCode):
-                    try:
-                        code = code()
-                    except Exception:
-                        code = None
-                if attempt >= self._max_read_attempts or not errors.is_retryable(
-                    code, operation=operation
+                if attempt >= self._max_read_attempts or not errors.should_retry_read(
+                    exc, operation=operation
                 ):
                     raise errors.from_grpc_error(exc, operation=operation) from exc
-                delay = min(1.0, 0.1 * (2 ** (attempt - 1)))
-                await asyncio.sleep(delay)
+                server_delay = errors.server_retry_delay(exc)
+                if server_delay is not None:
+                    await asyncio.sleep(server_delay)
+                else:
+                    await asyncio.sleep(min(1.0, 0.1 * (2 ** (attempt - 1))))
         assert last_exc is not None
         raise errors.from_grpc_error(last_exc, operation=operation)
 
     async def _call_create(self, operation: str, method, request):
+        if self._closed:
+            raise errors.TupagoTransportError("Client is closed; cannot issue create RPCs")
         try:
             metadata = await self._metadata()
             return await method(request, metadata=metadata, timeout=self._timeout())

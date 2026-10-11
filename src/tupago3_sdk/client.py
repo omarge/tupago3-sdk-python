@@ -105,12 +105,17 @@ class TupagoPaymentClient:
         return self._config.deadline_seconds or None
 
     def _call_read(self, operation: str, method, request, response_type):
+        if self._closed:
+            raise errors.TupagoTransportError("Client is closed; cannot issue read RPCs")
+
         def _invoke() -> object:
             return method(request, metadata=self._metadata(), timeout=self._timeout())
 
         return retry.retry_read_sync(self._retry_policy, operation, _invoke)
 
     def _call_create(self, operation: str, method, request):
+        if self._closed:
+            raise errors.TupagoTransportError("Client is closed; cannot issue create RPCs")
         try:
             return method(request, metadata=self._metadata(), timeout=self._timeout())
         except grpc.RpcError as exc:  # type: ignore[attr-defined]

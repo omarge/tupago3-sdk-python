@@ -70,10 +70,12 @@ def create_channel(config: ClientConfig) -> grpc.Channel:
 
     credentials = build_channel_credentials(config)
     assert credentials is not None
-    # The expected server identity for certificate verification. For a remote endpoint this
-    # defaults to the target host (a no-op correct match); it is never used to bypass hostname
-    # checks on a remote endpoint. For loopback we accept the host as-is.
-    server_name = config.tls.server_name or config.host()
+    # ``server_name`` is the *explicit* expected server identity (SNI / hostname verification).
+    # It is ONLY applied when the caller configures it. We never silently set it to the target
+    # host: for a remote endpoint gRPC verifies the certificate against the host in the target
+    # URI by default, which is the correct, non-bypass behaviour. Overriding with the host would
+    # be redundant and risks masking a misconfiguration if the field were later widened.
+    server_name = config.tls.server_name
     if server_name:
         options = options + [("grpc.ssl_target_name_override", server_name)]
     return grpc.secure_channel(target, credentials, options=options)

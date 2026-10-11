@@ -49,6 +49,8 @@ from tupago3_sdk.errors import (
     TupagoValidationError,
     from_grpc_error,
     is_retryable,
+    server_retry_delay,
+    should_retry_read,
 )
 from tupago3_sdk.models import (
     Amount,
@@ -101,6 +103,8 @@ __all__ = [
     "LabAsyncJwtProvider",
     "from_grpc_error",
     "is_retryable",
+    "should_retry_read",
+    "server_retry_delay",
     "GetClienteRequest",
     "GetCatalogoRequest",
     "GetStatusRequest",

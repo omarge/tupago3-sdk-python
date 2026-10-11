@@ -32,22 +32,25 @@ class RetryPolicy:
     # guard so the policy itself refuses to retry creates.
     jitter: float = 0.05
 
-    def _sleep(self, attempt: int) -> None:
+    def _backoff_seconds(self, attempt: int) -> float:
         delay = min(self.max_delay_seconds, self.base_delay_seconds * (2 ** (attempt - 1)))
         jitter = self.jitter * attempt
-        time.sleep(max(0.0, delay + (jitter if jitter else 0.0)))
+        return max(0.0, delay + jitter)
+
+    def _sleep(self, attempt: int) -> None:
+        time.sleep(self._backoff_seconds(attempt))
 
 
-def _is_retryable_rpc_error(exc: Exception, operation: str) -> bool:
-    code = getattr(exc, "code", None)
-    if callable(code) and not isinstance(code, grpc.StatusCode):
-        try:
-            code = code()
-        except Exception:
-            return False
-    if not isinstance(code, grpc.StatusCode):
-        return False
-    return errors.is_retryable(code, operation=operation)
+def _retry_delay_seconds(policy: RetryPolicy, attempt: int, exc: Exception) -> float:
+    """Compute how long to wait before the next attempt.
+
+    Honours a server-advised ``RetryInfo`` delay (capped) for ``RESOURCE_EXHAUSTED``; otherwise
+    uses the bounded exponential backoff. This guarantees a finite, bounded total wait.
+    """
+    server_delay = errors.server_retry_delay(exc)
+    if server_delay is not None:
+        return server_delay
+    return policy._backoff_seconds(attempt)
 
 
 def retry_read_sync(
@@ -58,7 +61,8 @@ def retry_read_sync(
     """Invoke ``call`` with bounded retry for read operations.
 
     Returns the response on success. On a non-retryable error (or after exhausting attempts)
-    the typed error is raised via :func:`errors.from_grpc_error`.
+    the typed error is raised via :func:`errors.from_grpc_error`. Create operations are never
+    passed here; the policy also refuses them via :func:`errors.should_retry_read`.
     """
     attempts = max(1, policy.max_attempts)
     last_exc: Exception | None = None
@@ -67,8 +71,8 @@ def retry_read_sync(
             return call()
         except grpc.RpcError as exc:  # type: ignore[attr-defined]
             last_exc = exc
-            if attempt >= attempts or not _is_retryable_rpc_error(exc, operation):
+            if attempt >= attempts or not errors.should_retry_read(exc, operation=operation):
                 raise errors.from_grpc_error(exc, operation=operation) from exc
-            policy._sleep(attempt)
+            time.sleep(_retry_delay_seconds(policy, attempt, exc))
     assert last_exc is not None
     raise errors.from_grpc_error(last_exc, operation=operation)
