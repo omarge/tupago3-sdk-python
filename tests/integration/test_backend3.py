@@ -32,8 +32,12 @@ from tupago3_sdk import (
     TupagoUnauthenticatedError,
 )
 
-BACKEND_HOST = "127.0.0.1"
-BACKEND_PORT = 9090
+# The real-backend integration test is OPT-IN. It NEVER defaults to 127.0.0.1:9090, which on a
+# production host collides with the live backend gRPC port. Point it at an isolated cert/loopback
+# endpoint via TUPAGO_BACKEND_ADDR (host:port) and, for TLS, TUPAGO_GRPC_CA_PATH. When unset, the
+# suite is recorded as BLOCKED (no mock substitution, no accidental prod probe).
+BACKEND_HOST = os.getenv("TUPAGO_BACKEND_ADDR_HOST", "")
+BACKEND_PORT = int(os.getenv("TUPAGO_BACKEND_ADDR_PORT", "0"))
 BACKEND_DEV_YML = "/home/geo/tupago2/backend3/src/main/resources/config/application-dev.yml"
 
 # Synthetic owner principals present in the lab dataset. `prodgcp` (jhi_user id 1054) owns
@@ -62,8 +66,13 @@ def _read_lab_secret() -> str | None:
 
 @pytest.fixture(scope="module")
 def backend_available():
+    if not BACKEND_HOST or BACKEND_PORT <= 0:
+        pytest.skip(
+            "BACKEND3 integration OPT-IN — set TUPAGO_BACKEND_ADDR_HOST/PORT to an isolated "
+            "cert/loopback endpoint; never defaults to 127.0.0.1:9090 (production gRPC)."
+        )
     if not _port_open(BACKEND_HOST, BACKEND_PORT):
-        pytest.skip("BACKEND3 NOT AVAILABLE — integration BLOCKED (port 9090 closed)")
+        pytest.skip("BACKEND3 NOT AVAILABLE — integration BLOCKED (endpoint closed)")
     secret = _read_lab_secret()
     if not secret:
         pytest.skip("BACKEND3 available but lab secret not found — BLOCKED")
