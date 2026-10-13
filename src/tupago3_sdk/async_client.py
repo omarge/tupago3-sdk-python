@@ -44,23 +44,24 @@ class AsyncTupagoPaymentClient:
         *,
         token_provider: BearerProvider | None = None,
         max_read_attempts: int = 3,
-        channel: grpc.aio.Channel | None = None,
         loop: asyncio.AbstractEventLoop | None = None,
     ) -> None:
         self._config = config or ClientConfig()
         validate_transport(self._config)
+        if token_provider is None and not self._config.allow_unauthenticated:
+            raise errors.TupagoUnauthenticatedError(
+                "token_provider is required for production clients; enable "
+                "ClientConfig.allow_unauthenticated only for isolated lab/test endpoints"
+            )
         self._token_provider = token_provider
         self._max_read_attempts = max(1, max_read_attempts)
         self._loop = loop
         target = f"{self._config.host()}:{self._config.port()}"
-        if channel is not None:
-            self._channel = channel
-            self._own_channel = False
-        elif not self._config.use_tls:
+        if not self._config.use_tls:
+            # Plaintext permitted only after validate_transport confirmed loopback.
             self._channel = grpc.aio.insecure_channel(
                 target, options=_aio_channel_options(self._config)
             )
-            self._own_channel = True
         else:
             creds = security.build_channel_credentials(self._config)
             assert creds is not None
@@ -72,9 +73,36 @@ class AsyncTupagoPaymentClient:
             if server_name:
                 secure_kwargs["server_host_override"] = server_name
             self._channel = grpc.aio.secure_channel(target, creds, **secure_kwargs)
-            self._own_channel = True
+        self._own_channel = True
         self._stub = grpc_pb.PaymentServiceStub(self._channel)
         self._closed = False
+
+    @classmethod
+    def _from_channel(
+        cls,
+        channel: grpc.aio.Channel,
+        *,
+        config: ClientConfig | None = None,
+        token_provider: BearerProvider | None = None,
+        max_read_attempts: int = 3,
+    ) -> AsyncTupagoPaymentClient:
+        """Internal/test-only seam: wrap a pre-built async gRPC channel.
+
+        Underscore-prefixed on purpose. The public constructor always builds the channel
+        itself (fail-closed TLS, ``grpc.enable_retries=0``); this exists so tests can attach
+        to an in-process gRPC servant without exposing an arbitrary channel-injection bypass
+        in the production API.
+        """
+        self = cls.__new__(cls)
+        self._config = config or ClientConfig()
+        self._token_provider = token_provider
+        self._max_read_attempts = max(1, max_read_attempts)
+        self._loop = None
+        self._channel = channel
+        self._own_channel = False
+        self._stub = grpc_pb.PaymentServiceStub(self._channel)
+        self._closed = False
+        return self
 
     # -- resource management ------------------------------------------------
     async def aclose(self) -> None:

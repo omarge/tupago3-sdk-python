@@ -149,9 +149,10 @@ class TupagoUnknownOutcomeError(TupagoError):
 
     Raised by create operations when the SDK cannot establish whether the request was
     received by the backend (e.g. UNAVAILABLE / DEADLINE_EXCEEDED / CANCELLED / ABORTED /
-    ALREADY_EXISTS / transport drop after send). The SDK guarantees it performed at most one
-    gRPC attempt, but cannot guarantee exactly-once server execution; the caller must
-    reconcile via status queries.
+    transport drop after send). ``ALREADY_EXISTS`` is NOT mapped here: a create with a
+    conflicting idempotency key is a deterministic :class:`TupagoAlreadyExistsError`. The SDK
+    guarantees at most one gRPC attempt, but cannot guarantee exactly-once server execution;
+    the caller must reconcile via status queries.
     """
 
     retryable = False
@@ -219,7 +220,6 @@ def from_grpc_error(
             StatusCode.DEADLINE_EXCEEDED,
             StatusCode.CANCELLED,
             StatusCode.ABORTED,
-            StatusCode.ALREADY_EXISTS,
         )
     ):
         return TupagoUnknownOutcomeError(

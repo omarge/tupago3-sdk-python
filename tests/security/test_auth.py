@@ -14,15 +14,16 @@ from tupago3_sdk import (
 )
 
 
-def _client(port, lab_secret, token_provider=None, use_tls=False, ca=None):
+def _client(port, lab_secret, token_provider=None, use_tls=False, ca=None, allow_unauth=False):
     if use_tls:
         config = ClientConfig(
             endpoint=f"127.0.0.1:{port}",
             use_tls=True,
             tls=TlsConfig(ca_cert_path=ca, server_name="127.0.0.1"),
+            allow_unauthenticated=allow_unauth,
         )
     else:
-        config = ClientConfig(endpoint=f"127.0.0.1:{port}")
+        config = ClientConfig(endpoint=f"127.0.0.1:{port}", allow_unauthenticated=allow_unauth)
     return TupagoPaymentClient(config, token_provider=token_provider)
 
 
@@ -36,7 +37,7 @@ def test_T05_valid_jwt(plaintext_server, lab_secret):
 
 def test_T06_missing_jwt(plaintext_server, lab_secret):
     port, _ = plaintext_server
-    client = _client(port, lab_secret, token_provider=None)
+    client = _client(port, lab_secret, token_provider=None, allow_unauth=True)
     with client:
         with pytest.raises(TupagoUnauthenticatedError):
             client.get_cliente(__import__("tupago3_sdk").models.GetClienteRequest(id=1))

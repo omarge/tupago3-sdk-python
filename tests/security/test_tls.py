@@ -28,8 +28,8 @@ def test_T09_remote_tls_required():
     with pytest.raises(InsecureTransportError):
         TupagoPaymentClient(config)
     # Loopback plaintext is allowed (fail-open only on loopback).
-    loop = ClientConfig(endpoint="127.0.0.1:9090", use_tls=False)
-    TupagoPaymentClient(loop)  # construction OK
+    loop = ClientConfig(endpoint="127.0.0.1:9090", use_tls=False, allow_unauthenticated=True)
+    TupagoPaymentClient(loop)  # construction OK (lab loopback, no-auth opt-in)
 
 
 def test_T09b_tls_verification_cannot_be_disabled():

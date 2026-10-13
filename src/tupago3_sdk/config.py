@@ -10,7 +10,7 @@ validation, sets ``check_hostname=False`` or uses ``CERT_NONE`` for remote endpo
 from __future__ import annotations
 
 import dataclasses
-import socket
+import ipaddress
 
 DEFAULT_GRPC_PORT = 9090
 DEFAULT_DEADLINE_SECONDS = 30.0
@@ -18,37 +18,41 @@ DEFAULT_MAX_MESSAGE_BYTES = 16 * 1024 * 1024
 
 
 def _is_loopback_host(host: str) -> bool:
-    """Return ``True`` only for a genuine loopback address/hostname.
+    """Return ``True`` only for an explicit local loopback identity.
 
-    IPv4 ``127.0.0.0/8``, IPv6 ``::1`` and the literal hostnames ``localhost`` /
-    ``localhost.localdomain`` are treated as loopback. Any other resolvable name is
-    NOT loopback; this is deliberately conservative so a hostname that happens to
-    resolve to loopback in some environment is never silently trusted off-host.
+    Plaintext transport is permitted on loopback only. To avoid a DNS/TOCTOU security
+    boundary, we NEVER resolve an arbitrary hostname to decide plaintext eligibility: a
+    hostname that merely *resolves* to loopback in some environment is not trusted off-host.
+    We accept only:
+      * the literal hostnames ``localhost`` / ``localhost.localdomain``
+      * any IP literal that :func:`ipaddress.ip_address` reports as loopback
+        (``127.0.0.0/8`` and ``::1``)
+    Anything else (including a remote hostname that happens to resolve to ``127.0.0.1``) is
+    treated as non-loopback and requires TLS.
     """
     host = (host or "").strip()
     if not host:
         return False
+    # Strip IPv6 bracket notation ([::1]:port -> ::1).
+    if host.startswith("["):
+        end = host.find("]")
+        if end != -1:
+            host = host[1:end]
+    # Try the whole string as an IP literal first (covers bare 127.0.0.1 and bare ::1).
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        pass
+    # Otherwise it is host[:port] (or a bare hostname) — take the host part.
     bare = host.split(":", 1)[0]
-    bare = bare.strip("[]")
-    if bare.lower() in ("localhost", "localhost.localdomain", "127.0.0.1", "::1"):
+    low = bare.lower()
+    if low in ("localhost", "localhost.localdomain"):
         return True
     try:
-        info = socket.getaddrinfo(bare, None)
-    except socket.gaierror:
+        return ipaddress.ip_address(bare).is_loopback
+    except ValueError:
+        # Not an IP literal (a real hostname) -> never trust for plaintext.
         return False
-    for entry in info:
-        addr = str(entry[4][0])
-        try:
-            packed = socket.inet_pton(entry[0], addr)
-        except OSError:
-            return False
-        if entry[0] == socket.AF_INET:
-            if not packed.startswith(b"\x7f"):
-                return False
-        else:
-            if not packed == b"\x00" * 15 + b"\x01":
-                return False
-    return True
 
 
 @dataclasses.dataclass(frozen=True)
@@ -82,6 +86,9 @@ class ClientConfig:
     endpoint: str = "127.0.0.1"
     use_tls: bool = False
     tls: TlsConfig = dataclasses.field(default_factory=TlsConfig)
+    # Fail-closed auth: a production client MUST supply a token_provider. The only way to
+    # construct without one is to explicitly opt into an isolated lab/test endpoint.
+    allow_unauthenticated: bool = False
     deadline_seconds: float = DEFAULT_DEADLINE_SECONDS
     max_message_bytes: int = DEFAULT_MAX_MESSAGE_BYTES
 

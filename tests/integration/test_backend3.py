@@ -144,7 +144,7 @@ def test_backend3_read_invalid_jwt(backend_available):
 
 
 def test_backend3_read_missing_jwt(backend_available):
-    config = ClientConfig(endpoint=f"{BACKEND_HOST}:{BACKEND_PORT}")
+    config = ClientConfig(endpoint=f"{BACKEND_HOST}:{BACKEND_PORT}", allow_unauthenticated=True)
     client = TupagoPaymentClient(config, token_provider=None)
     with client:
         with pytest.raises(TupagoUnauthenticatedError):

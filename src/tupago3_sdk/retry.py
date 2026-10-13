@@ -3,7 +3,9 @@
 Create operations must NEVER use this wrapper — the financial invariant requires at most one
 gRPC attempt for creates, and :class:`TupagoPaymentClient` / :class:`AsyncTupagoPaymentClient`
 invoke create RPCs directly. This module exists only to make read RPCs resilient to transient
-transport errors (UNAVAILABLE / DEADLINE_EXCEEDED / CANCELLED / INTERNAL / RESOURCE_EXHAUSTED)
+transport errors (UNAVAILABLE, DEADLINE_EXCEEDED, and RESOURCE_EXHAUSTED only when the server
+advertises a RetryInfo delay). CANCELLED and INTERNAL are intentionally NOT retried (see
+errors.READ_RETRYABLE_CODES) with a hard attempt ceiling and capped backoff.
 with a hard attempt ceiling and capped backoff.
 """
 

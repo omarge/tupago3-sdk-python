@@ -64,16 +64,48 @@ class TupagoPaymentClient:
         *,
         token_provider: BearerProvider | None = None,
         retry_policy: retry.RetryPolicy | None = None,
-        channel: grpc.Channel | None = None,
     ) -> None:
         self._config = config or ClientConfig()
         validate_transport(self._config)
+        if token_provider is None and not self._config.allow_unauthenticated:
+            raise errors.TupagoUnauthenticatedError(
+                "token_provider is required for production clients; enable "
+                "ClientConfig.allow_unauthenticated only for isolated lab/test endpoints"
+            )
         self._token_provider = token_provider
         self._retry_policy = retry_policy or retry.RetryPolicy()
-        self._channel = channel or security.create_channel(self._config)
-        self._own_channel = channel is None
+        # SDK-authoritative channel: fail-closed TLS + grpc.enable_retries=0. A caller
+        # cannot inject an arbitrary channel through the public constructor.
+        self._channel = security.create_channel(self._config)
+        self._own_channel = True
         self._stub = grpc_pb.PaymentServiceStub(self._channel)
         self._closed = False
+
+    @classmethod
+    def _from_channel(
+        cls,
+        channel: grpc.Channel,
+        *,
+        config: ClientConfig | None = None,
+        token_provider: BearerProvider | None = None,
+        retry_policy: retry.RetryPolicy | None = None,
+    ) -> TupagoPaymentClient:
+        """Internal/test-only seam: wrap a pre-built gRPC channel.
+
+        Underscore-prefixed on purpose. The public constructor always builds the channel
+        itself (fail-closed TLS, ``grpc.enable_retries=0``); this exists so tests can attach
+        to an in-process gRPC servant without exposing an arbitrary channel-injection bypass
+        in the production API.
+        """
+        self = cls.__new__(cls)
+        self._config = config or ClientConfig()
+        self._token_provider = token_provider
+        self._retry_policy = retry_policy or retry.RetryPolicy()
+        self._channel = channel
+        self._own_channel = False
+        self._stub = grpc_pb.PaymentServiceStub(self._channel)
+        self._closed = False
+        return self
 
     # -- resource management ------------------------------------------------
     def close(self) -> None:
