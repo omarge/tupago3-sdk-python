@@ -18,7 +18,15 @@ Proporciona clientes síncrono (`TupagoPaymentClient`) y asíncrono (`AsyncTupag
 * **Sin reintentos automáticos en creates.** `CreateQr` y `CreateTelefonico` realizan como máximo un intento (single-attempt / no-blind-retry). El SDK no garantiza exactly-once en el servidor, pero garantiza que nunca reenvía automáticamente. Fallos de transporte con resultado indeterminado se reportan como `TupagoUnknownOutcomeError` (no reintentable) para que el caller reconcilie.
 * **Idempotency key preservada verbatim.** El caller es dueño de la clave; el SDK nunca la regenera ni altera.
 * **TLS fail-closed.** TLS con verificación de identidad es obligatorio para cualquier endpoint no-loopback. Plaintext solo se permite en loopback real.
-* **JWT Bearer por llamada.** Las credenciales se resuelven dinámicamente vía `TokenProvider`; el token nunca se embebe permanentemente en el canal.
+* **JWT Bearer por llamada.** Las credenciales se resuelven dinámicamente vía `TokenProvider`; el token nunca se embebe permanentemente en el canal. Token en blanco falla antes del dispatch.
+
+## Transportes
+
+| Transporte | Módulo | Estado |
+|------------|--------|--------|
+| gRPC | (default) | Completo |
+| REST | `tupago3_sdk.rest_transport` | Implementado (rutas verificadas) |
+| GraphQL | `tupago3_sdk.graphql_transport` | Implementado (ByCuenta + mutations) |
 
 ## Inicio rápido
 
@@ -31,24 +39,6 @@ with client:
     perfil = client.get_cliente(GetClienteRequest(id=1))
     print(perfil.cliente.nombre)
 ```
-
-Async:
-
-```python
-from tupago3_sdk import AsyncTupagoPaymentClient, LabAsyncJwtProvider, CreateQrRequest
-
-async with AsyncTupagoPaymentClient(config, token_provider=LabAsyncJwtProvider(base64_secret=LAB_SECRET)) as client:
-    resp = await client.create_qr(CreateQrRequest(id_cuenta=1, monto=150.00, idempotency_key="k-1"))
-    print(resp.json)
-```
-
-## Manejo de errores
-
-Todas las fallas lanzan una subclase tipada de `TupagoError`. Las operaciones de create lanzan `TupagoUnknownOutcomeError` (indeterminado) o `TupagoPendingReconciliationError` (`TUPAGO_PENDING_RECONCILIATION`, no reintentar) cuando aplica.
-
-## Estado
-
-Actualmente solo gRPC. REST y GraphQL están pendientes de implementación alineada con backend3.
 
 ## Licencia
 
