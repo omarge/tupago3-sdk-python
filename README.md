@@ -15,14 +15,23 @@ Proporciona clientes síncrono (`TupagoPaymentClient`) y asíncrono (`AsyncTupag
 
 ## ByCuenta en consultas de estatus
 
-Cuando el caller proporciona `id_cuenta`, el SDK usa las rutas **ByCuenta** del backend:
+El backend3 ofrece dos formas de consultar el estatus de un pago:
 
-| Operación | Ruta REST (ByCuenta) | GraphQL |
-|------------|----------------------|---------|
-| GetQrStatus | `POST /api/payments/estatusmsjqr` | `pagoQrEstatusByCuenta` |
-| GetTelefonicoStatus | `POST /api/payments/estatusmsjcobrotelefonico` | `pagoTelefonicoEstatusByCuenta` |
+| Variante | Cuándo usarla | Qué envía el SDK |
+|----------|-----------------|-------------------|
+| **ByCuenta** | El caller conoce la cuenta | `id_cuenta` explícito en el body |
+| **Usuario** | El backend resuelve la cuenta del JWT | Solo `idc` |
 
-Esto permite que el cliente indique explícitamente la cuenta.
+**Política del SDK:** si el request incluye `id_cuenta` > 0, se usa **ByCuenta** automáticamente.
+
+```python
+# ByCuenta (recomendado)
+status = client.get_qr_status(GetStatusRequest(idc="abc123", id_cuenta=42))
+
+# Rutas usadas:
+# REST:  POST /api/payments/estatusmsjqr
+# GraphQL: pagoQrEstatusByCuenta(idc, idCuenta)
+```
 
 ## Invariantes financieras
 
@@ -36,7 +45,7 @@ Esto permite que el cliente indique explícitamente la cuenta.
 | Transporte | Módulo | Estado |
 |------------|--------|--------|
 | gRPC | default | Completo |
-| REST | `tupago3_sdk.rest` | Completo (ByCuenta en status) |
+| REST | `tupago3_sdk.rest` | Completo (ByCuenta en status cuando `id_cuenta` presente) |
 | GraphQL | `tupago3_sdk.graphql` | Completo (ByCuenta + mutations) |
 
 Selecciona el transporte vía `ClientConfig` / `validate_transport`.
