@@ -2,7 +2,7 @@
 
 Cliente Python idiomático y seguro para el `PaymentService` de **TUPAGO3**.
 
-Proporciona clientes síncrono (`TupagoPaymentClient`) y asíncrono (`AsyncTupagoPaymentClient`) que cubren las seis operaciones canónicas.
+Proporciona clientes síncrono (`TupagoPaymentClient`) y asíncrono (`AsyncTupagoPaymentClient`) que cubren las seis operaciones canónicas sobre **gRPC**, **REST** y **GraphQL**.
 
 | Operación | Descripción |
 | --- | --- |
@@ -15,18 +15,20 @@ Proporciona clientes síncrono (`TupagoPaymentClient`) y asíncrono (`AsyncTupag
 
 ## Invariantes financieras
 
-* **Sin reintentos automáticos en creates.** `CreateQr` y `CreateTelefonico` realizan como máximo un intento (single-attempt / no-blind-retry). El SDK no garantiza exactly-once en el servidor, pero garantiza que nunca reenvía automáticamente. Fallos de transporte con resultado indeterminado se reportan como `TupagoUnknownOutcomeError` (no reintentable) para que el caller reconcilie.
+* **Sin reintentos automáticos en creates.** `CreateQr` y `CreateTelefonico` realizan como máximo un intento (single-attempt / no-blind-retry). Fallos de transporte con resultado indeterminado se reportan como `TupagoUnknownOutcomeError` (no reintentable) para que el caller reconcilie.
 * **Idempotency key preservada verbatim.** El caller es dueño de la clave; el SDK nunca la regenera ni altera.
 * **TLS fail-closed.** TLS con verificación de identidad es obligatorio para cualquier endpoint no-loopback. Plaintext solo se permite en loopback real.
-* **JWT Bearer por llamada.** Las credenciales se resuelven dinámicamente vía `TokenProvider`; el token nunca se embebe permanentemente en el canal. Token en blanco falla antes del dispatch.
+* **Auth fail-closed.** Las credenciales son requeridas por defecto. Token en blanco falla antes del dispatch.
 
 ## Transportes
 
 | Transporte | Módulo | Estado |
 |------------|--------|--------|
-| gRPC | (default) | Completo |
-| REST | `tupago3_sdk.rest_transport` | Implementado (rutas verificadas) |
-| GraphQL | `tupago3_sdk.graphql_transport` | Implementado (ByCuenta + mutations) |
+| gRPC | default | Completo |
+| REST | `tupago3_sdk.rest` | Completo (rutas verificadas) |
+| GraphQL | `tupago3_sdk.graphql` | Completo (ByCuenta + mutations) |
+
+Selecciona el transporte vía `ClientConfig` / `validate_transport`.
 
 ## Inicio rápido
 
