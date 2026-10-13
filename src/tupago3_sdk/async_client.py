@@ -68,6 +68,15 @@ class AsyncTupagoPaymentClient:
                 max_read_attempts=self._max_read_attempts,
             )
             self._own_channel = True
+        elif transport == "graphql":
+            from tupago3_sdk.graphql import AsyncGraphQLTransport
+
+            self._transport = AsyncGraphQLTransport(
+                config=self._config,
+                token_provider=token_provider,
+                max_read_attempts=self._max_read_attempts,
+            )
+            self._own_channel = True
         else:
             target = f"{self._config.host()}:{self._config.port()}"
             if not self._config.use_tls:

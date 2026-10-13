@@ -52,6 +52,7 @@ from tupago3_sdk.errors import (
     server_retry_delay,
     should_retry_read,
 )
+from tupago3_sdk.graphql import AsyncGraphQLTransport, GraphQLTransport
 from tupago3_sdk.models import (
     Amount,
     CreateQrRequest,
@@ -125,5 +126,7 @@ __all__ = [
     "AsyncGrpcTransport",
     "RestTransport",
     "AsyncRestTransport",
+    "GraphQLTransport",
+    "AsyncGraphQLTransport",
     "__version__",
 ]

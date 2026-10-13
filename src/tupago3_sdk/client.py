@@ -85,6 +85,13 @@ class TupagoPaymentClient:
                 config=self._config, token_provider=token_provider, retry_policy=self._retry_policy
             )
             self._own_channel = True
+        elif transport == "graphql":
+            from tupago3_sdk.graphql import GraphQLTransport
+
+            self._transport = GraphQLTransport(
+                config=self._config, token_provider=token_provider, retry_policy=self._retry_policy
+            )
+            self._own_channel = True
         else:
             # SDK-authoritative gRPC channel (fail-closed TLS + grpc.enable_retries=0) wrapped by
             # a transport the public API cannot bypass.
