@@ -62,6 +62,12 @@ from tupago3_sdk.models import (
     to_double_amount,
 )
 from tupago3_sdk.retry import RetryPolicy
+from tupago3_sdk.transport import (
+    AsyncGrpcTransport,
+    AsyncPaymentTransport,
+    GrpcTransport,
+    SyncPaymentTransport,
+)
 
 __version__ = "0.1.0"
 
@@ -112,5 +118,9 @@ __all__ = [
     "CreateTelefonicoRequest",
     "Amount",
     "to_double_amount",
+    "SyncPaymentTransport",
+    "AsyncPaymentTransport",
+    "GrpcTransport",
+    "AsyncGrpcTransport",
     "__version__",
 ]

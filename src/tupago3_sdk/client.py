@@ -2,7 +2,9 @@
 
 Exposes the six ``PaymentService`` RPCs with an idiomatic Python API, bearer-JWT injected
 per-RPC, fail-closed TLS, and the financial create invariant (at most one gRPC attempt, no
-automatic retry). Read operations use a bounded retry for transient errors only.
+automatic retry). Read operations use a bounded retry for transient errors only. All wire I/O
+is delegated to a :class:`~tupago3_sdk.transport.GrpcTransport`; the transport interface is
+shared with future REST/GraphQL transports, so this public surface is stable.
 """
 
 from __future__ import annotations
@@ -12,7 +14,7 @@ import grpc
 from tupago3_sdk import auth, errors, models, retry, security
 from tupago3_sdk.config import ClientConfig, validate_transport
 from tupago3_sdk.generated import payment_pb2 as pb
-from tupago3_sdk.generated import payment_pb2_grpc as grpc_pb
+from tupago3_sdk.transport import GrpcTransport
 
 BearerProvider = auth.TokenProvider
 
@@ -74,11 +76,16 @@ class TupagoPaymentClient:
             )
         self._token_provider = token_provider
         self._retry_policy = retry_policy or retry.RetryPolicy()
-        # SDK-authoritative channel: fail-closed TLS + grpc.enable_retries=0. A caller
-        # cannot inject an arbitrary channel through the public constructor.
-        self._channel = security.create_channel(self._config)
+        # SDK-authoritative channel (fail-closed TLS + grpc.enable_retries=0) wrapped by a
+        # transport the public API cannot bypass.
+        channel = security.create_channel(self._config)
+        self._transport = GrpcTransport(
+            channel,
+            config=self._config,
+            token_provider=token_provider,
+            retry_policy=self._retry_policy,
+        )
         self._own_channel = True
-        self._stub = grpc_pb.PaymentServiceStub(self._channel)
         self._closed = False
 
     @classmethod
@@ -101,9 +108,13 @@ class TupagoPaymentClient:
         self._config = config or ClientConfig()
         self._token_provider = token_provider
         self._retry_policy = retry_policy or retry.RetryPolicy()
-        self._channel = channel
+        self._transport = GrpcTransport(
+            channel,
+            config=self._config,
+            token_provider=token_provider,
+            retry_policy=self._retry_policy,
+        )
         self._own_channel = False
-        self._stub = grpc_pb.PaymentServiceStub(self._channel)
         self._closed = False
         return self
 
@@ -113,10 +124,7 @@ class TupagoPaymentClient:
             return
         self._closed = True
         if self._own_channel:
-            try:
-                self._channel.close()
-            except Exception:
-                pass
+            self._transport.close()
 
     def __enter__(self) -> TupagoPaymentClient:
         return self
@@ -124,68 +132,32 @@ class TupagoPaymentClient:
     def __exit__(self, *exc: object) -> None:
         self.close()
 
-    # -- internals ----------------------------------------------------------
-    def _metadata(self) -> list[tuple[str, str]]:
-        metadata: list[tuple[str, str]] = []
-        if self._token_provider is not None:
-            token = self._token_provider.get_token()
-            if token:
-                metadata.append(("authorization", f"Bearer {token}"))
-        return metadata
-
-    def _timeout(self) -> float | None:
-        return self._config.deadline_seconds or None
-
-    def _call_read(self, operation: str, method, request, response_type):
-        if self._closed:
-            raise errors.TupagoTransportError("Client is closed; cannot issue read RPCs")
-
-        def _invoke() -> object:
-            return method(request, metadata=self._metadata(), timeout=self._timeout())
-
-        return retry.retry_read_sync(self._retry_policy, operation, _invoke)
-
-    def _call_create(self, operation: str, method, request):
-        if self._closed:
-            raise errors.TupagoTransportError("Client is closed; cannot issue create RPCs")
-        try:
-            return method(request, metadata=self._metadata(), timeout=self._timeout())
-        except grpc.RpcError as exc:  # type: ignore[attr-defined]
-            raise errors.from_grpc_error(
-                exc,
-                operation=operation,
-                idempotency_key=getattr(request, "idempotency_key", None),
-                unknown_outcome_on_create=True,
-            ) from exc
-
     # -- RPC surface --------------------------------------------------------
     def get_cliente(self, req: models.GetClienteRequest | pb.GetClienteRequest) -> pb.ClientePerfil:
         request = req if isinstance(req, pb.GetClienteRequest) else build_get_cliente(req)
-        return self._call_read("GetCliente", self._stub.GetCliente, request, pb.ClientePerfil)
+        return self._transport.read("GetCliente", "GetCliente", request)
 
     def get_catalogo(
         self, req: models.GetCatalogoRequest | pb.GetCatalogoRequest
     ) -> pb.CatalogoInstitucion:
         request = req if isinstance(req, pb.GetCatalogoRequest) else build_get_catalogo(req)
-        return self._call_read(
-            "GetCatalogo", self._stub.GetCatalogo, request, pb.CatalogoInstitucion
-        )
+        return self._transport.read("GetCatalogo", "GetCatalogo", request)
 
     def get_qr_status(self, req: models.GetStatusRequest | pb.GetStatusRequest) -> pb.JsonResponse:
         request = req if isinstance(req, pb.GetStatusRequest) else build_get_status(req)
-        return self._call_read("GetQrStatus", self._stub.GetQrStatus, request, pb.JsonResponse)
+        return self._transport.read("GetQrStatus", "GetQrStatus", request)
 
     def get_telefonico_status(
         self, req: models.GetStatusRequest | pb.GetStatusRequest
     ) -> pb.JsonResponse:
         request = req if isinstance(req, pb.GetStatusRequest) else build_get_status(req)
-        return self._call_read(
-            "GetTelefonicoStatus", self._stub.GetTelefonicoStatus, request, pb.JsonResponse
-        )
+        return self._transport.read("GetTelefonicoStatus", "GetTelefonicoStatus", request)
 
     def create_qr(self, req: models.CreateQrRequest | pb.CreateQrRequest) -> pb.JsonResponse:
         request = req if isinstance(req, pb.CreateQrRequest) else build_create_qr(req)
-        return self._call_create("CreateQr", self._stub.CreateQr, request)
+        return self._transport.create(
+            "CreateQr", "CreateQr", request, idempotency_key=request.idempotency_key
+        )
 
     def create_telefonico(
         self, req: models.CreateTelefonicoRequest | pb.CreateTelefonicoRequest
@@ -193,4 +165,6 @@ class TupagoPaymentClient:
         request = (
             req if isinstance(req, pb.CreateTelefonicoRequest) else build_create_telefonico(req)
         )
-        return self._call_create("CreateTelefonico", self._stub.CreateTelefonico, request)
+        return self._transport.create(
+            "CreateTelefonico", "CreateTelefonico", request, idempotency_key=request.idempotency_key
+        )
