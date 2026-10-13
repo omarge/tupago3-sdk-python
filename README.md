@@ -13,6 +13,17 @@ Proporciona clientes síncrono (`TupagoPaymentClient`) y asíncrono (`AsyncTupag
 | `CreateQr` | Crea un pago QR. |
 | `CreateTelefonico` | Crea un pago telefónico. |
 
+## ByCuenta en consultas de estatus
+
+Cuando el caller proporciona `id_cuenta`, el SDK usa las rutas **ByCuenta** del backend:
+
+| Operación | Ruta REST (ByCuenta) | GraphQL |
+|------------|----------------------|---------|
+| GetQrStatus | `POST /api/payments/estatusmsjqr` | `pagoQrEstatusByCuenta` |
+| GetTelefonicoStatus | `POST /api/payments/estatusmsjcobrotelefonico` | `pagoTelefonicoEstatusByCuenta` |
+
+Esto permite que el cliente indique explícitamente la cuenta.
+
 ## Invariantes financieras
 
 * **Sin reintentos automáticos en creates.** `CreateQr` y `CreateTelefonico` realizan como máximo un intento (single-attempt / no-blind-retry). Fallos de transporte con resultado indeterminado se reportan como `TupagoUnknownOutcomeError` (no reintentable) para que el caller reconcilie.
@@ -25,7 +36,7 @@ Proporciona clientes síncrono (`TupagoPaymentClient`) y asíncrono (`AsyncTupag
 | Transporte | Módulo | Estado |
 |------------|--------|--------|
 | gRPC | default | Completo |
-| REST | `tupago3_sdk.rest` | Completo (rutas verificadas) |
+| REST | `tupago3_sdk.rest` | Completo (ByCuenta en status) |
 | GraphQL | `tupago3_sdk.graphql` | Completo (ByCuenta + mutations) |
 
 Selecciona el transporte vía `ClientConfig` / `validate_transport`.
