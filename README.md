@@ -1,34 +1,26 @@
-# TUPAGO3 SDK for Python
+# TUPAGO3 SDK para Python
 
-Secure, idiomatic Python client SDK for the **TUPAGO3** `PaymentService` gRPC API.
+Cliente Python idiomático y seguro para el `PaymentService` de **TUPAGO3**.
 
-The SDK provides synchronous (`TupagoPaymentClient`) and asynchronous
-(`AsyncTupagoPaymentClient`) clients that wrap the six `PaymentService` RPCs defined in
-`backend3`'s authoritative Protobuf contract:
+Proporciona clientes síncrono (`TupagoPaymentClient`) y asíncrono (`AsyncTupagoPaymentClient`) que cubren las seis operaciones canónicas.
 
-| RPC | Description |
+| Operación | Descripción |
 | --- | --- |
-| `GetCliente` | Fetch an owned client profile. |
-| `GetCatalogo` | Fetch an institution catalog entry. |
-| `GetQrStatus` | Query QR payment status (raw Banxico JSON). |
-| `GetTelefonicoStatus` | Query telephonic payment status (raw Banxico JSON). |
-| `CreateQr` | Create a QR payment. |
-| `CreateTelefonico` | Create a telephonic payment. |
+| `GetCliente` | Obtiene el perfil de un cliente propio. |
+| `GetCatalogo` | Obtiene una entrada del catálogo de instituciones. |
+| `GetQrStatus` | Consulta el estatus de un pago QR (JSON Banxico). |
+| `GetTelefonicoStatus` | Consulta el estatus de un pago telefónico (JSON Banxico). |
+| `CreateQr` | Crea un pago QR. |
+| `CreateTelefonico` | Crea un pago telefónico. |
 
-## Financial safety invariants
+## Invariantes financieras
 
-* **No automatic retries on create.** `CreateQr` and `CreateTelefonico` perform at most one
-  gRPC attempt. The SDK cannot guarantee exactly-once server execution, but it guarantees it
-  never resubmits automatically. Transport failures with an indeterminate result are surfaced
-  as `TupagoUnknownOutcomeError` (non-retryable) so the caller reconciles via status queries.
-* **Idempotency key is preserved verbatim.** The caller owns the `idempotency_key`; the SDK
-  never regenerates or alters it.
-* **Fail-closed TLS.** TLS with identity verification is mandatory for any non-loopback
-  endpoint. Plaintext is permitted only on a real loopback address.
-* **Per-RPC bearer JWT.** Credentials are resolved dynamically per call via a `TokenProvider`;
-  the token is never embedded permanently on the channel.
+* **Sin reintentos automáticos en creates.** `CreateQr` y `CreateTelefonico` realizan como máximo un intento (single-attempt / no-blind-retry). El SDK no garantiza exactly-once en el servidor, pero garantiza que nunca reenvía automáticamente. Fallos de transporte con resultado indeterminado se reportan como `TupagoUnknownOutcomeError` (no reintentable) para que el caller reconcilie.
+* **Idempotency key preservada verbatim.** El caller es dueño de la clave; el SDK nunca la regenera ni altera.
+* **TLS fail-closed.** TLS con verificación de identidad es obligatorio para cualquier endpoint no-loopback. Plaintext solo se permite en loopback real.
+* **JWT Bearer por llamada.** Las credenciales se resuelven dinámicamente vía `TokenProvider`; el token nunca se embebe permanentemente en el canal.
 
-## Quick start
+## Inicio rápido
 
 ```python
 from tupago3_sdk import TupagoPaymentClient, ClientConfig, LabJwtProvider, GetClienteRequest
@@ -50,12 +42,14 @@ async with AsyncTupagoPaymentClient(config, token_provider=LabAsyncJwtProvider(b
     print(resp.json)
 ```
 
-## Error handling
+## Manejo de errores
 
-All failures raise a typed `TupagoError` subclass. Create operations raise
-`TupagoUnknownOutcomeError` (indeterminate) or `TupagoPendingReconciliationError`
-(`TUPAGO_PENDING_RECONCILIATION`, do-not-retry) when applicable.
+Todas las fallas lanzan una subclase tipada de `TupagoError`. Las operaciones de create lanzan `TupagoUnknownOutcomeError` (indeterminado) o `TupagoPendingReconciliationError` (`TUPAGO_PENDING_RECONCILIATION`, no reintentar) cuando aplica.
 
-## License
+## Estado
 
-Proprietary. Internal controlled distribution only.
+Actualmente solo gRPC. REST y GraphQL están pendientes de implementación alineada con backend3.
+
+## Licencia
+
+Propietaria. Distribución interna controlada únicamente.
