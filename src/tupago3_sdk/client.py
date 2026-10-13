@@ -14,7 +14,7 @@ import grpc
 from tupago3_sdk import auth, errors, models, retry, security
 from tupago3_sdk.config import ClientConfig, validate_transport
 from tupago3_sdk.generated import payment_pb2 as pb
-from tupago3_sdk.transport import GrpcTransport
+from tupago3_sdk.transport import GrpcTransport, SyncPaymentTransport
 
 BearerProvider = auth.TokenProvider
 
@@ -66,6 +66,7 @@ class TupagoPaymentClient:
         *,
         token_provider: BearerProvider | None = None,
         retry_policy: retry.RetryPolicy | None = None,
+        transport: str = "grpc",
     ) -> None:
         self._config = config or ClientConfig()
         validate_transport(self._config)
@@ -76,16 +77,25 @@ class TupagoPaymentClient:
             )
         self._token_provider = token_provider
         self._retry_policy = retry_policy or retry.RetryPolicy()
-        # SDK-authoritative channel (fail-closed TLS + grpc.enable_retries=0) wrapped by a
-        # transport the public API cannot bypass.
-        channel = security.create_channel(self._config)
-        self._transport = GrpcTransport(
-            channel,
-            config=self._config,
-            token_provider=token_provider,
-            retry_policy=self._retry_policy,
-        )
-        self._own_channel = True
+        self._transport: SyncPaymentTransport
+        if transport == "rest":
+            from tupago3_sdk.rest import RestTransport
+
+            self._transport = RestTransport(
+                config=self._config, token_provider=token_provider, retry_policy=self._retry_policy
+            )
+            self._own_channel = True
+        else:
+            # SDK-authoritative gRPC channel (fail-closed TLS + grpc.enable_retries=0) wrapped by
+            # a transport the public API cannot bypass.
+            channel = security.create_channel(self._config)
+            self._transport = GrpcTransport(
+                channel,
+                config=self._config,
+                token_provider=token_provider,
+                retry_policy=self._retry_policy,
+            )
+            self._own_channel = True
         self._closed = False
 
     @classmethod

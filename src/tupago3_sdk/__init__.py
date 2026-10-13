@@ -61,6 +61,7 @@ from tupago3_sdk.models import (
     GetStatusRequest,
     to_double_amount,
 )
+from tupago3_sdk.rest import AsyncRestTransport, RestTransport
 from tupago3_sdk.retry import RetryPolicy
 from tupago3_sdk.transport import (
     AsyncGrpcTransport,
@@ -122,5 +123,7 @@ __all__ = [
     "AsyncPaymentTransport",
     "GrpcTransport",
     "AsyncGrpcTransport",
+    "RestTransport",
+    "AsyncRestTransport",
     "__version__",
 ]

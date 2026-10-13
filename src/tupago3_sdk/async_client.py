@@ -23,7 +23,7 @@ from tupago3_sdk.client import (
 )
 from tupago3_sdk.config import ClientConfig, validate_transport
 from tupago3_sdk.generated import payment_pb2 as pb
-from tupago3_sdk.transport import AsyncGrpcTransport
+from tupago3_sdk.transport import AsyncGrpcTransport, AsyncPaymentTransport
 
 BearerProvider = auth.TokenProvider | auth.AsyncTokenProvider
 
@@ -46,6 +46,7 @@ class AsyncTupagoPaymentClient:
         token_provider: BearerProvider | None = None,
         max_read_attempts: int = 3,
         loop: asyncio.AbstractEventLoop | None = None,
+        transport: str = "grpc",
     ) -> None:
         self._config = config or ClientConfig()
         validate_transport(self._config)
@@ -57,28 +58,38 @@ class AsyncTupagoPaymentClient:
         self._token_provider = token_provider
         self._max_read_attempts = max(1, max_read_attempts)
         self._loop = loop
-        target = f"{self._config.host()}:{self._config.port()}"
-        if not self._config.use_tls:
-            # Plaintext permitted only after validate_transport confirmed loopback.
-            channel = grpc.aio.insecure_channel(target, options=_aio_channel_options(self._config))
+        self._transport: AsyncPaymentTransport
+        if transport == "rest":
+            from tupago3_sdk.rest import AsyncRestTransport
+
+            self._transport = AsyncRestTransport(
+                config=self._config,
+                token_provider=token_provider,
+                max_read_attempts=self._max_read_attempts,
+            )
+            self._own_channel = True
         else:
-            creds = security.build_channel_credentials(self._config)
-            assert creds is not None
-            # ``server_name`` is the *explicit* expected server identity. We only override when
-            # the caller configures it; otherwise gRPC verifies against the target host (correct,
-            # non-bypass behaviour for remote endpoints).
-            server_name = self._config.tls.server_name
-            secure_kwargs: dict[str, object] = {"options": _aio_channel_options(self._config)}
-            if server_name:
-                secure_kwargs["server_host_override"] = server_name
-            channel = grpc.aio.secure_channel(target, creds, **secure_kwargs)
-        self._transport = AsyncGrpcTransport(
-            channel,
-            config=self._config,
-            token_provider=token_provider,
-            max_read_attempts=self._max_read_attempts,
-        )
-        self._own_channel = True
+            target = f"{self._config.host()}:{self._config.port()}"
+            if not self._config.use_tls:
+                # Plaintext permitted only after validate_transport confirmed loopback.
+                channel = grpc.aio.insecure_channel(
+                    target, options=_aio_channel_options(self._config)
+                )
+            else:
+                creds = security.build_channel_credentials(self._config)
+                assert creds is not None
+                server_name = self._config.tls.server_name
+                secure_kwargs: dict[str, object] = {"options": _aio_channel_options(self._config)}
+                if server_name:
+                    secure_kwargs["server_host_override"] = server_name
+                channel = grpc.aio.secure_channel(target, creds, **secure_kwargs)
+            self._transport = AsyncGrpcTransport(
+                channel,
+                config=self._config,
+                token_provider=token_provider,
+                max_read_attempts=self._max_read_attempts,
+            )
+            self._own_channel = True
         self._closed = False
 
     @classmethod
