@@ -249,8 +249,14 @@ class GraphQLTransport:
                 err = body["errors"][0]
                 mapped = _map_graphql_error(err)
                 if is_create:
-                    # Only ALREADY_EXISTS is deterministic; everything else is ambiguous.
-                    if isinstance(mapped, errors.TupagoAlreadyExistsError):
+                    # Preserve deterministic errors; only ambiguous becomes UnknownOutcome.
+                    if isinstance(mapped, (
+                        errors.TupagoAlreadyExistsError,
+                        errors.TupagoPendingReconciliationError,
+                        errors.TupagoUnauthenticatedError,
+                        errors.TupagoPermissionDeniedError,
+                        errors.TupagoInvalidArgumentError,
+                    )):
                         raise mapped
                     raise errors.TupagoUnknownOutcomeError(
                         f"GraphQL create error after dispatch: {mapped.message}",
