@@ -279,7 +279,7 @@ class RestTransport:
         for attempt in range(1, attempts + 1):
             try:
                 resp = _invoke()
-                if 500 <= resp.status_code <= 599:
+                if resp.status_code in (502, 503, 504):
                     raise errors.TupagoUnavailableError(f"http {resp.status_code}")
                 return resp
             except (httpx.TransportError, errors.TupagoUnavailableError) as exc:
@@ -470,7 +470,7 @@ class AsyncRestTransport:
         for attempt in range(1, self._max_read_attempts + 1):
             try:
                 resp = await self._client.request(method, path, headers=headers, json=json_body)
-                if 500 <= resp.status_code <= 599:
+                if resp.status_code in (502, 503, 504):
                     raise errors.TupagoUnavailableError(f"http {resp.status_code}")
                 return resp
             except (httpx.TransportError, errors.TupagoUnavailableError) as exc:
