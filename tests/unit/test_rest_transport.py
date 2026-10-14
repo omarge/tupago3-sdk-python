@@ -332,7 +332,7 @@ async def test_rest_async_create_202_is_pending_reconciliation():
                     idempotency_key="PENDING-ASYNC",
                 )
             )
-        await c.close()
+        await c.aclose()
         assert server.create_post_count == 1
     finally:
         server.shutdown()
