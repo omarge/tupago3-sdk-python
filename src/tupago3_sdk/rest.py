@@ -279,7 +279,7 @@ class RestTransport:
         for attempt in range(1, attempts + 1):
             try:
                 resp = _invoke()
-                if resp.status_code in (502, 503, 504):
+                if 500 <= resp.status_code <= 599:
                     raise errors.TupagoUnavailableError(f"http {resp.status_code}")
                 return resp
             except (httpx.TransportError, errors.TupagoUnavailableError) as exc:
@@ -368,8 +368,8 @@ class RestTransport:
                 operation=operation,
                 idempotency_key=idempotency_key,
             )
-        # CREATE: 502/503/504 after dispatch = UnknownOutcome (not retryable Unavailable).
-        if resp.status_code in (502, 503, 504):
+        # CREATE: any 5xx after dispatch = UnknownOutcome (not retryable Unavailable).
+        if 500 <= resp.status_code <= 599:
             raise errors.TupagoUnknownOutcomeError(
                 f"REST create received HTTP {resp.status_code} after dispatch",
                 grpc_code="UNKNOWN",
@@ -470,7 +470,7 @@ class AsyncRestTransport:
         for attempt in range(1, self._max_read_attempts + 1):
             try:
                 resp = await self._client.request(method, path, headers=headers, json=json_body)
-                if resp.status_code in (502, 503, 504):
+                if 500 <= resp.status_code <= 599:
                     raise errors.TupagoUnavailableError(f"http {resp.status_code}")
                 return resp
             except (httpx.TransportError, errors.TupagoUnavailableError) as exc:
@@ -558,7 +558,7 @@ class AsyncRestTransport:
                 operation=operation,
                 idempotency_key=idempotency_key,
             )
-        if resp.status_code in (502, 503, 504):
+        if 500 <= resp.status_code <= 599:
             raise errors.TupagoUnknownOutcomeError(
                 f"REST create received HTTP {resp.status_code} after dispatch",
                 grpc_code="UNKNOWN",
