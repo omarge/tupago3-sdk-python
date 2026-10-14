@@ -31,6 +31,7 @@ from tupago3_sdk import (
     TupagoPaymentClient,
     TupagoUnauthenticatedError,
     TupagoUnavailableError,
+    TupagoPendingReconciliationError,
     TupagoUnknownOutcomeError,
     models,
 )
@@ -343,6 +344,52 @@ def test_graphql_create_transient_error_is_unknown_outcome():
         server.shutdown()
 
 
+def test_graphql_create_pending_reconciliation_is_preserved():
+    server, port = _error_server("PAYMENT_PENDING_RECONCILIATION")
+    try:
+        c = _client(port)
+        with pytest.raises(TupagoPendingReconciliationError):
+            c.create_qr(
+                models.CreateQrRequest(
+                    id_cuenta=1,
+                    monto=1.0,
+                    concepto="c",
+                    referencia_numerica=2,
+                    nombre_cliente="n",
+                    email="e",
+                    tipo_pago=1,
+                    vigencia=30,
+                    idempotency_key="X",
+                )
+            )
+        c.close()
+    finally:
+        server.shutdown()
+
+
+async def test_graphql_async_create_pending_reconciliation_is_preserved():
+    server, port = _error_server("PAYMENT_PENDING_RECONCILIATION")
+    try:
+        c = await _aclient(port)
+        with pytest.raises(TupagoPendingReconciliationError):
+            await c.create_qr(
+                models.CreateQrRequest(
+                    id_cuenta=1,
+                    monto=1.0,
+                    concepto="c",
+                    referencia_numerica=2,
+                    nombre_cliente="n",
+                    email="e",
+                    tipo_pago=1,
+                    vigencia=30,
+                    idempotency_key="X",
+                )
+            )
+        await c.aclose()
+    finally:
+        server.shutdown()
+
+
 def test_graphql_create_network_ambiguous_is_unknown_outcome():
     cfg = ClientConfig(endpoint="127.0.0.1:1", use_tls=False, allow_unauthenticated=True)
     c = TupagoPaymentClient(cfg, transport="graphql")
@@ -474,8 +521,8 @@ def test_graphql_create_single_attempt_no_retry():
     server, port = _create_adversarial_server("err503")
     try:
         c = _client(port)
-        # A 503 create is a typed error, but it must NOT be retried (single attempt).
-        with pytest.raises(TupagoUnavailableError):
+        # A 503 after financial dispatch is ambiguous: single attempt, UnknownOutcome.
+        with pytest.raises(TupagoUnknownOutcomeError):
             c.create_qr(
                 models.CreateQrRequest(
                     id_cuenta=1,
