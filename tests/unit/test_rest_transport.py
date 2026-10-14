@@ -29,6 +29,7 @@ from tupago3_sdk import (
     ClientConfig,
     InsecureTransportError,
     TupagoPaymentClient,
+    TupagoPendingReconciliationError,
     TupagoUnauthenticatedError,
     TupagoUnavailableError,
     TupagoUnknownOutcomeError,
@@ -270,6 +271,70 @@ def test_rest_create_qr_single_attempt_no_retry(rest_server):
     # Exactly one POST must have reached the create endpoint — never a blind retry.
     assert server.create_post_count == 1
     c.close()
+
+
+class _PendingHandler(BaseHTTPRequestHandler):
+    def log_message(self, *a):
+        pass
+
+    def do_POST(self):
+        self.send_response(202)
+        self.send_header("Content-Type", "application/json")
+        self.end_headers()
+        self.wfile.write(b'{"type":"payment-pending-reconciliation"}')
+
+
+def test_rest_create_202_is_pending_reconciliation():
+    server = _Server(("127.0.0.1", 0), _PendingHandler)
+    port = server.server_address[1]
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        c = _client(f"127.0.0.1:{port}")
+        with pytest.raises(TupagoPendingReconciliationError):
+            c.create_qr(
+                models.CreateQrRequest(
+                    id_cuenta=1,
+                    monto=1.0,
+                    concepto="c",
+                    referencia_numerica=2,
+                    nombre_cliente="n",
+                    email="e",
+                    tipo_pago=1,
+                    vigencia=30,
+                    idempotency_key="PENDING",
+                )
+            )
+        c.close()
+        assert server.create_post_count == 1
+    finally:
+        server.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_rest_async_create_202_is_pending_reconciliation():
+    server = _Server(("127.0.0.1", 0), _PendingHandler)
+    port = server.server_address[1]
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        c = await _aclient(f"127.0.0.1:{port}")
+        with pytest.raises(TupagoPendingReconciliationError):
+            await c.create_qr(
+                models.CreateQrRequest(
+                    id_cuenta=1,
+                    monto=1.0,
+                    concepto="c",
+                    referencia_numerica=2,
+                    nombre_cliente="n",
+                    email="e",
+                    tipo_pago=1,
+                    vigencia=30,
+                    idempotency_key="PENDING-ASYNC",
+                )
+            )
+        await c.close()
+        assert server.create_post_count == 1
+    finally:
+        server.shutdown()
 
 
 # -- R1.17 / R1.8: create ambiguity fails closed as UnknownOutcome ----------------------
