@@ -483,7 +483,11 @@ def test_rest_create_http_500_is_unknown_outcome_no_retry(async_mode):
 
             async def invoke():
                 client = AsyncTupagoPaymentClient(
-                    ClientConfig(endpoint=f"127.0.0.1:{port}", use_tls=False, allow_unauthenticated=True),
+                    ClientConfig(
+                        endpoint=f"127.0.0.1:{port}",
+                        use_tls=False,
+                        allow_unauthenticated=True,
+                    ),
                     transport="rest",
                 )
                 try:
