@@ -445,3 +445,61 @@ class _MalformedHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+
+
+class _Create500Handler(BaseHTTPRequestHandler):
+    def log_message(self, *a):
+        pass
+
+    def do_POST(self):
+        self.server.create_post_count += 1
+        body = b'{"message":"ambiguous upstream failure"}'
+        self.send_response(500)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+
+@pytest.mark.parametrize("async_mode", [False, True])
+def test_rest_create_http_500_is_unknown_outcome_no_retry(async_mode):
+    server = _Server(("127.0.0.1", 0), _Create500Handler)
+    port = server.server_address[1]
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    request = models.CreateQrRequest(
+        id_cuenta=1,
+        monto=1.0,
+        concepto="c",
+        referencia_numerica=2,
+        nombre_cliente="n",
+        email="e",
+        tipo_pago=1,
+        vigencia=30,
+        idempotency_key="HTTP500-RECONCILE-SAME-KEY",
+    )
+    try:
+        if async_mode:
+            import asyncio
+
+            async def invoke():
+                client = AsyncTupagoPaymentClient(
+                    ClientConfig(endpoint=f"127.0.0.1:{port}", use_tls=False, allow_unauthenticated=True),
+                    transport="rest",
+                )
+                try:
+                    with pytest.raises(TupagoUnknownOutcomeError):
+                        await client.create_qr(request)
+                finally:
+                    await client.aclose()
+
+            asyncio.run(invoke())
+        else:
+            client = _client(f"127.0.0.1:{port}")
+            try:
+                with pytest.raises(TupagoUnknownOutcomeError):
+                    client.create_qr(request)
+            finally:
+                client.close()
+        assert server.create_post_count == 1, "Financial create must never be blindly retried"
+    finally:
+        server.shutdown()
