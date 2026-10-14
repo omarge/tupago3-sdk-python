@@ -4,10 +4,8 @@ Validates that REST and GraphQL transports can be imported and constructed.
 Live backend3 conformance is opt-in via TUPAGO_BACKEND3_LAB=1.
 """
 
-import pytest
-
-from tupago3_sdk.rest_transport import RestPaymentTransport
 from tupago3_sdk.graphql_transport import GraphQlPaymentTransport
+from tupago3_sdk.rest_transport import RestPaymentTransport
 
 
 def test_rest_transport_can_be_constructed():
