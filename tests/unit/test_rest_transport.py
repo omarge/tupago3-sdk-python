@@ -278,6 +278,7 @@ class _PendingHandler(BaseHTTPRequestHandler):
         pass
 
     def do_POST(self):
+        self.server.create_post_count += 1
         self.send_response(202)
         self.send_header("Content-Type", "application/json")
         self.end_headers()
