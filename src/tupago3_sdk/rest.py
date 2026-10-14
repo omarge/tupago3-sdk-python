@@ -359,6 +359,14 @@ class RestTransport:
                 operation=operation,
                 idempotency_key=idempotency_key,
             )
+        # CREATE: 502/503/504 after dispatch = UnknownOutcome (not retryable Unavailable).
+        if resp.status_code in (502, 503, 504):
+            raise errors.TupagoUnknownOutcomeError(
+                f"REST create received HTTP {resp.status_code} after dispatch",
+                grpc_code="UNKNOWN",
+                operation=operation,
+                idempotency_key=idempotency_key,
+            )
         if not _is_success(resp.status_code):
             raise _status_to_error(
                 resp.status_code,
