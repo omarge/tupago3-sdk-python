@@ -1,1 +1,1 @@
-$(cat /tmp/rest_fixed.py)
+PLACEHOLDER_WILL_REPLACE
