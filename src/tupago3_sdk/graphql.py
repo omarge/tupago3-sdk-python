@@ -214,6 +214,13 @@ class GraphQLTransport:
                 )
             if not (200 <= resp.status_code < 300):
                 http_err = _http_error(resp.status_code, resp.text or "", operation=operation)
+                if is_create and resp.status_code in (502, 503, 504):
+                    raise errors.TupagoUnknownOutcomeError(
+                        f"GraphQL create received HTTP {resp.status_code} after dispatch",
+                        grpc_code="UNKNOWN",
+                        operation=operation,
+                        idempotency_key=idempotency_key,
+                    )
                 # Reads retry only transient (502/503/504) conditions.
                 if not is_create and resp.status_code in (502, 503, 504):
                     last_exc = http_err
@@ -466,6 +473,13 @@ class AsyncGraphQLTransport:
                 )
             if not (200 <= resp.status_code < 300):
                 http_err = _http_error(resp.status_code, resp.text or "", operation=operation)
+                if is_create and resp.status_code in (502, 503, 504):
+                    raise errors.TupagoUnknownOutcomeError(
+                        f"GraphQL create received HTTP {resp.status_code} after dispatch",
+                        grpc_code="UNKNOWN",
+                        operation=operation,
+                        idempotency_key=idempotency_key,
+                    )
                 if not is_create and resp.status_code in (502, 503, 504):
                     last_exc = http_err
                     if attempt >= attempts:
@@ -500,7 +514,18 @@ class AsyncGraphQLTransport:
                 err = body["errors"][0]
                 mapped = _map_graphql_error(err)
                 if is_create:
-                    if isinstance(mapped, errors.TupagoAlreadyExistsError):
+                    # Preserve deterministic errors; only ambiguous becomes UnknownOutcome.
+                    if isinstance(
+                        mapped,
+                        (
+                            errors.TupagoAlreadyExistsError,
+                            errors.TupagoPendingReconciliationError,
+                            errors.TupagoUnauthenticatedError,
+                            errors.TupagoPermissionDeniedError,
+                            errors.TupagoInvalidArgumentError,
+                            errors.TupagoFailedPreconditionError,
+                        ),
+                    ):
                         raise mapped
                     raise errors.TupagoUnknownOutcomeError(
                         f"GraphQL create error after dispatch: {mapped.message}",
