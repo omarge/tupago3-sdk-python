@@ -29,9 +29,9 @@ from tupago3_sdk import (
     InsecureTransportError,
     TupagoAlreadyExistsError,
     TupagoPaymentClient,
+    TupagoPendingReconciliationError,
     TupagoUnauthenticatedError,
     TupagoUnavailableError,
-    TupagoPendingReconciliationError,
     TupagoUnknownOutcomeError,
     models,
 )
