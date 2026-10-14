@@ -665,4 +665,3 @@ def _json_to_cliente_perfil(body: str, *, operation: str = "GetCliente") -> pb.C
             else pb.CatalogoInstitucion()
         ),
     )
-
