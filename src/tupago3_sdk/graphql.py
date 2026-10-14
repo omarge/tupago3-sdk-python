@@ -214,7 +214,7 @@ class GraphQLTransport:
                 )
             if not (200 <= resp.status_code < 300):
                 http_err = _http_error(resp.status_code, resp.text or "", operation=operation)
-                if is_create and resp.status_code in (502, 503, 504):
+                if is_create and resp.status_code >= 500:
                     raise errors.TupagoUnknownOutcomeError(
                         f"GraphQL create received HTTP {resp.status_code} after dispatch",
                         grpc_code="UNKNOWN",
@@ -473,7 +473,7 @@ class AsyncGraphQLTransport:
                 )
             if not (200 <= resp.status_code < 300):
                 http_err = _http_error(resp.status_code, resp.text or "", operation=operation)
-                if is_create and resp.status_code in (502, 503, 504):
+                if is_create and resp.status_code >= 500:
                     raise errors.TupagoUnknownOutcomeError(
                         f"GraphQL create received HTTP {resp.status_code} after dispatch",
                         grpc_code="UNKNOWN",
