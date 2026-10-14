@@ -359,6 +359,24 @@ class RestTransport:
                 operation=operation,
                 idempotency_key=idempotency_key,
             )
+        # Authoritative accepted-but-unresolved create: explicit PendingReconciliation,
+        # never generic success and never blind retry.
+        if resp.status_code == 202:
+            raise errors.TupagoPendingReconciliationError(
+                resp.text or "Payment pending reconciliation; do not retry; query status first",
+                grpc_code="ABORTED",
+                operation=operation,
+                idempotency_key=idempotency_key,
+            )
+        # Authoritative accepted-but-unresolved create: explicit PendingReconciliation,
+        # never generic success and never blind retry.
+        if resp.status_code == 202:
+            raise errors.TupagoPendingReconciliationError(
+                resp.text or "Payment pending reconciliation; do not retry; query status first",
+                grpc_code="ABORTED",
+                operation=operation,
+                idempotency_key=idempotency_key,
+            )
         # CREATE: 502/503/504 after dispatch = UnknownOutcome (not retryable Unavailable).
         if resp.status_code in (502, 503, 504):
             raise errors.TupagoUnknownOutcomeError(
