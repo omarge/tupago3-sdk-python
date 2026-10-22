@@ -45,11 +45,12 @@ jobs:
           python-version: "3.12"
       - name: Install
         run: |
+          python -m venv .venv
+          . .venv/bin/activate
           python -m pip install --upgrade pip
-          pip install -e ".[dev]"
-          pip install pip-audit
+          pip install -e ".[dev]" pip-audit
       - name: Dependency audit
-        run: pip-audit -r <(pip freeze) || true
+        run: .venv/bin/pip-audit
       - name: Secret scan (no secrets committed)
         run: |
           grep -rniE "secret\s*=\s*[\"'][A-Za-z0-9+/=]{32,}|base64-secret" src tests examples || echo "no secrets found"
