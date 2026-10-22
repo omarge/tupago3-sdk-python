@@ -53,4 +53,13 @@ jobs:
         run: .venv/bin/pip-audit
       - name: Secret scan (no secrets committed)
         run: |
-          grep -rniE "secret\s*=\s*[\"'][A-Za-z0-9+/=]{32,}|base64-secret" src tests examples || echo "no secrets found"
+          if grep -rIlE "(secret|base64-secret)\s*[:=]\s*[\"']?[A-Za-z0-9+/=]{32,}" src tests examples; then
+            echo "::error::Potential hard-coded secret detected"
+            exit 1
+          else
+            grep_status=$?
+            if [ "$grep_status" -ne 1 ]; then
+              exit "$grep_status"
+            fi
+            echo "No hard-coded secret literals found"
+          fi
